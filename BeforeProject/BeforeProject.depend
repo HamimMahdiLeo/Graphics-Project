@@ -1,7 +1,8 @@
 # depslib dependency file v1.0
-1789320225 source:i:\aiub\summer-26\computer graphics\allgluts\beforeproject\graphics-project\beforeproject\main.cpp
+1789332841 source:i:\aiub\summer-26\computer graphics\allgluts\beforeproject\graphics-project\beforeproject\main.cpp
 	<GL/glut.h>
 	<cmath>
+	<cstdlib>
 
 1632060800 c:\program files\codeblocks\mingw\x86_64-w64-mingw32\include\gl\glut.h
 	"freeglut_std.h"
