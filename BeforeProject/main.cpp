@@ -3,30 +3,46 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <cstdio>
 
 // ==========================================
 // GLOBAL VARIABLES & SCENE MANAGEMENT
 // ==========================================
-int currentScene = 1; // 1 = Tomar Scene, 2 = Friend's Scene
+int currentScene = 1; // 1 = Scene 1, 2 = Scene 2, 3 = Scene 3
 
 bool isNight = false;
 bool isRaining = false;
+bool isFoggy = false;
 bool isPaused = false;
 
-// Shared Animation Variables
+// Shared Global Animation Variables
 float car1X = -1.30f, car2X = -0.65f, car3X = -0.95f;
 float bus1X = 0.15f, bus2X = -0.35f;
 float wheelAngle = 0.0f;
 float cloud1X = -0.70f, cloud2X = 0.20f, cloud3X = -1.20f;
 
-// Scene 1 Specific Variables
+// Scene 1 Specific
 float planeX1 = -1.40f;
 
-// Scene 2 Specific Variables
+// Scene 2 Specific
 float planeParam2 = 0.0f;
 
-const int MAX_RAIN = 120;
+// Scene 3 Specific
+float planePosX3 = -1.40f;
+float fireTruckX3 = -1.30f;
+float sportsCarX3 = -1.50f;
+float luxurySUV_X3 = 0.40f;
+float cargoVanX3 = -0.70f;
+float radarAngle3 = 0.0f;
+bool emergencySiren3 = false;
+int sirenTicks3 = 0;
+bool beaconState3 = true;
+int beaconTicks3 = 0;
+
+const int MAX_RAIN = 160;
 float rainX[MAX_RAIN], rainY[MAX_RAIN], rainSpeed[MAX_RAIN];
+
+const float PI = 3.1415926535f;
 
 // ==========================================
 // STRUCTS & UTILITIES
@@ -34,23 +50,6 @@ float rainX[MAX_RAIN], rainY[MAX_RAIN], rainSpeed[MAX_RAIN];
 struct Point2D {
     float x, y;
 };
-
-Point2D applyTransform(float x, float y, float tx, float ty, float angleDeg, float sx, float sy) {
-    float rad = angleDeg * 3.14159265f / 180.0f;
-    float cosA = cos(rad);
-    float sinA = sin(rad);
-
-    float scaledX = x * sx;
-    float scaledY = y * sy;
-
-    float rotX = scaledX * cosA - scaledY * sinA;
-    float rotY = scaledX * sinA + scaledY * cosA;
-
-    Point2D p;
-    p.x = rotX + tx;
-    p.y = rotY + ty;
-    return p;
-}
 
 Point2D calculateBezierPoint(float t, Point2D p0, Point2D p1, Point2D p2, Point2D p3) {
     float u = 1.0f - t;
@@ -83,12 +82,32 @@ void drawRect(float x1, float y1, float x2, float y2, float r, float g, float b)
     glEnd();
 }
 
+void drawSolidBox(float x1, float y1, float x2, float y2, float r, float g, float b, float alpha = 1.0f) {
+    glColor4f(r, g, b, alpha);
+    glBegin(GL_QUADS);
+        glVertex2f(x1, y1);
+        glVertex2f(x2, y1);
+        glVertex2f(x2, y2);
+        glVertex2f(x1, y2);
+    glEnd();
+}
+
 void drawCircle(float cx, float cy, float radius, float r, float g, float b) {
     glColor3f(r, g, b);
     glBegin(GL_POLYGON);
     for (int i = 0; i < 360; i += 15) {
         float rad = i * 3.14159265f / 180.0f;
         glVertex2f(cx + cos(rad) * radius, cy + sin(rad) * radius);
+    }
+    glEnd();
+}
+
+void drawSmoothCircle(float cx, float cy, float rad, float r, float g, float b, float alpha = 1.0f) {
+    glColor4f(r, g, b, alpha);
+    glBegin(GL_POLYGON);
+    for (int i = 0; i < 360; i += 10) {
+        float rads = i * PI / 180.0f;
+        glVertex2f(cx + cos(rads) * rad, cy + sin(rads) * rad);
     }
     glEnd();
 }
@@ -100,6 +119,7 @@ void drawLine(float x1, float y1, float x2, float y2, float r, float g, float b,
     glVertex2f(x1, y1);
     glVertex2f(x2, y2);
     glEnd();
+    glLineWidth(1.0f);
 }
 
 void drawText(float x, float y, float r, float g, float b, const char* text) {
@@ -110,104 +130,84 @@ void drawText(float x, float y, float r, float g, float b, const char* text) {
     }
 }
 
+void drawBitmapText(float x, float y, const char* str, void* font, float r, float g, float b) {
+    glColor3f(r, g, b);
+    glRasterPos2f(x, y);
+    for (const char* c = str; *c != '\0'; c++)
+        glutBitmapCharacter(font, *c);
+}
+
 // ==========================================
-// SHARED PRIMITIVES & UTILITIES
+// SHARED PRIMITIVES
 // ==========================================
 void drawRotatingWheel(float cx, float cy, float radius) {
     glPushMatrix();
     glTranslatef(cx, cy, 0.0f);
     glRotatef(wheelAngle, 0.0f, 0.0f, 1.0f);
-
-    glColor3f(0.12f, 0.12f, 0.12f);
-    glBegin(GL_POLYGON);
-    for (int i = 0; i < 360; i += 15) {
-        float rad = i * 3.14159265f / 180.0f;
-        glVertex2f(cos(rad) * radius, sin(rad) * radius);
+    drawCircle(0, 0, radius, 0.10f, 0.10f, 0.11f);
+    drawCircle(0, 0, radius * 0.45f, 0.70f, 0.70f, 0.72f);
+    for (int i = 0; i < 4; i++) {
+        float a = i * 3.14159265f / 2.0f;
+        drawLine(0, 0, cos(a) * radius * 0.70f, sin(a) * radius * 0.70f, 0.18f, 0.18f, 0.20f, 1.5f);
     }
-    glEnd();
-
-    glBegin(GL_POLYGON);
-        glColor3f(0.85f, 0.20f, 0.20f);
-        for (float t = 0; t <= 3.14159f; t += 0.15f) {
-            glVertex2f(cos(t) * (radius * 0.6f), sin(t) * (radius * 0.6f));
-        }
-    glEnd();
-
-    glBegin(GL_POLYGON);
-        glColor3f(0.95f, 0.95f, 0.95f);
-        for (float t = 3.14159f; t <= 2 * 3.14159f; t += 0.15f) {
-            glVertex2f(cos(t) * (radius * 0.6f), sin(t) * (radius * 0.6f));
-        }
-    glEnd();
-
     glPopMatrix();
 }
 
 void drawSky() {
     if (isRaining) {
         if (isNight) {
-            drawRect(-1.0f, -0.28f, 1.0f, 1.0f, 0.03f, 0.04f, 0.10f);
-            drawCircle(-0.80f, 0.80f, 0.075f, 0.55f, 0.55f, 0.50f);
+            drawRect(-1, -0.28, 1, 1, 0.03, 0.04, 0.10);
+            drawCircle(-0.8, 0.8, 0.075, 0.55, 0.55, 0.50);
         } else {
-            drawRect(-1.0f, -0.28f, 1.0f, 1.0f, 0.42f, 0.48f, 0.55f);
-            drawCircle(-0.80f, 0.80f, 0.080f, 0.80f, 0.75f, 0.50f);
+            drawRect(-1, -0.28, 1, 1, 0.42, 0.48, 0.55);
+            drawCircle(-0.8, 0.8, 0.08, 0.80, 0.75, 0.50);
         }
     } else {
         if (isNight) {
-            drawRect(-1.0f, -0.28f, 1.0f, 1.0f, 0.06f, 0.08f, 0.18f);
-            drawCircle(-0.80f, 0.80f, 0.080f, 0.95f, 0.95f, 0.85f);
+            drawRect(-1, -0.28, 1, 1, 0.06, 0.08, 0.18);
+            drawCircle(-0.8, 0.8, 0.08, 0.95, 0.95, 0.85);
         } else {
-            drawRect(-1.0f, -0.28f, 1.0f, 1.0f, 0.55f, 0.78f, 0.98f);
-            drawCircle(-0.80f, 0.80f, 0.085f, 1.0f, 0.85f, 0.20f);
+            drawRect(-1, -0.28, 1, 1, 0.55, 0.78, 0.98);
+            drawCircle(-0.8, 0.8, 0.085, 1.0, 0.85, 0.20);
         }
     }
-
-    auto drawDetailedCloudPrv = [](float cx, float cy, float scale) {
-        float baseR, baseG, baseB, highR, highG, highB;
-        if (isRaining) {
-            baseR = isNight ? 0.10f : 0.40f; baseG = isNight ? 0.12f : 0.43f; baseB = isNight ? 0.16f : 0.48f;
-            highR = isNight ? 0.15f : 0.50f; highG = isNight ? 0.17f : 0.53f; highB = isNight ? 0.22f : 0.58f;
-        } else {
-            baseR = isNight ? 0.20f : 0.90f; baseG = isNight ? 0.24f : 0.92f; baseB = isNight ? 0.32f : 0.96f;
-            highR = isNight ? 0.28f : 1.00f; highG = isNight ? 0.32f : 1.00f; highB = isNight ? 0.40f : 1.00f;
-        }
-        drawCircle(cx - 0.06f * scale, cy - 0.015f * scale, 0.038f * scale, baseR, baseG, baseB);
-        drawCircle(cx + 0.06f * scale, cy - 0.015f * scale, 0.038f * scale, baseR, baseG, baseB);
-        drawRect(cx - 0.06f * scale, cy - 0.035f * scale, cx + 0.06f * scale, cy + 0.005f * scale, baseR, baseG, baseB);
-        drawCircle(cx - 0.05f * scale, cy, 0.045f * scale, baseR, baseG, baseB);
-        drawCircle(cx + 0.05f * scale, cy + 0.005f * scale, 0.042f * scale, baseR, baseG, baseB);
-        drawCircle(cx, cy + 0.022f * scale, 0.058f * scale, highR, highG, highB);
-        drawCircle(cx - 0.025f * scale, cy + 0.012f * scale, 0.048f * scale, highR, highG, highB);
-        drawCircle(cx + 0.025f * scale, cy + 0.015f * scale, 0.046f * scale, highR, highG, highB);
+    auto drawCloudPrv = [](float x, float y, float scale) {
+        float bR = isRaining ? (isNight ? 0.10f : 0.40f) : (isNight ? 0.20f : 0.90f);
+        float bG = isRaining ? (isNight ? 0.12f : 0.43f) : (isNight ? 0.24f : 0.92f);
+        float bB = isRaining ? (isNight ? 0.16f : 0.48f) : (isNight ? 0.32f : 0.96f);
+        float hR = isRaining ? (isNight ? 0.15f : 0.50f) : (isNight ? 0.28f : 1.00f);
+        float hG = isRaining ? (isNight ? 0.17f : 0.53f) : (isNight ? 0.32f : 1.00f);
+        float hB = isRaining ? (isNight ? 0.22f : 0.58f) : (isNight ? 0.40f : 1.00f);
+        drawCircle(x - 0.06f * scale, y, 0.045f * scale, bR, bG, bB);
+        drawCircle(x + 0.06f * scale, y, 0.045f * scale, bR, bG, bB);
+        drawCircle(x, y + 0.025f * scale, 0.060f * scale, hR, hG, hB);
+        drawCircle(x - 0.035f * scale, y + 0.012f * scale, 0.048f * scale, hR, hG, hB);
+        drawCircle(x + 0.035f * scale, y + 0.015f * scale, 0.048f * scale, hR, hG, hB);
+        drawRect(x - 0.06f * scale, y - 0.035f * scale, x + 0.06f * scale, y + 0.005f * scale, bR, bG, bB);
     };
-
-    drawDetailedCloudPrv(cloud1X, 0.62f, 1.25f);
-    drawDetailedCloudPrv(cloud2X, 0.44f, 1.05f);
-    drawDetailedCloudPrv(cloud3X, 0.53f, 0.90f);
+    drawCloudPrv(cloud1X, 0.62f, 1.25f);
+    drawCloudPrv(cloud2X, 0.44f, 1.05f);
+    drawCloudPrv(cloud3X, 0.53f, 0.90f);
 }
 
 void drawAirplane(float x, float y) {
     glPushMatrix();
     glTranslatef(x, y, 0.0f);
-    drawRect(-0.02f, 0.038f, 0.04f, 0.055f, 0.40f, 0.42f, 0.48f);
-    drawRect(-0.02f, -0.055f, 0.04f, -0.038f, 0.40f, 0.42f, 0.48f);
-    drawCircle(0.04f, 0.0465f, 0.0085f, 0.25f, 0.25f, 0.28f);
-    drawCircle(0.04f, -0.0465f, 0.0085f, 0.25f, 0.25f, 0.28f);
     glColor3f(0.72f, 0.75f, 0.82f);
-    glBegin(GL_POLYGON); glVertex2f(-0.04f, 0.018f); glVertex2f(0.05f, 0.018f); glVertex2f(0.00f, 0.11f); glVertex2f(-0.05f, 0.11f); glEnd();
-    glBegin(GL_POLYGON); glVertex2f(-0.04f, -0.018f); glVertex2f(0.05f, -0.018f); glVertex2f(0.00f, -0.11f); glVertex2f(-0.05f, -0.11f); glEnd();
+    glBegin(GL_POLYGON); glVertex2f(-0.04f, 0.018f); glVertex2f(0.05f, 0.018f); glVertex2f(0.0f, 0.11f); glVertex2f(-0.05f, 0.11f); glEnd();
+    glBegin(GL_POLYGON); glVertex2f(-0.04f, -0.018f); glVertex2f(0.05f, -0.018f); glVertex2f(0.0f, -0.11f); glVertex2f(-0.05f, -0.11f); glEnd();
     glColor3f(0.68f, 0.70f, 0.76f);
     glBegin(GL_POLYGON); glVertex2f(-0.13f, 0.012f); glVertex2f(-0.08f, 0.012f); glVertex2f(-0.11f, 0.045f); glVertex2f(-0.14f, 0.045f); glEnd();
     glBegin(GL_POLYGON); glVertex2f(-0.13f, -0.012f); glVertex2f(-0.08f, -0.012f); glVertex2f(-0.11f, -0.045f); glVertex2f(-0.14f, -0.045f); glEnd();
-    drawRect(-0.14f, -0.020f, 0.13f, 0.020f, 0.94f, 0.95f, 0.98f);
+    drawRect(-0.14f, -0.02f, 0.13f, 0.02f, 0.94f, 0.95f, 0.98f);
     glColor3f(0.94f, 0.95f, 0.98f);
-    glBegin(GL_POLYGON); glVertex2f(0.13f, -0.020f); glVertex2f(0.18f, -0.006f); glVertex2f(0.18f, 0.006f); glVertex2f(0.13f, 0.020f); glEnd();
+    glBegin(GL_POLYGON); glVertex2f(0.13f, -0.02f); glVertex2f(0.18f, -0.006f); glVertex2f(0.18f, 0.006f); glVertex2f(0.13f, 0.02f); glEnd();
     drawRect(-0.14f, -0.003f, 0.14f, 0.003f, 0.85f, 0.20f, 0.20f);
     glColor3f(0.20f, 0.40f, 0.65f);
     glBegin(GL_POLYGON); glVertex2f(0.12f, 0.004f); glVertex2f(0.155f, 0.004f); glVertex2f(0.145f, 0.016f); glVertex2f(0.12f, 0.016f); glEnd();
-    for (float px = -0.08f; px <= 0.09f; px += 0.022f) { drawCircle(px, 0.008f, 0.004f, 0.25f, 0.45f, 0.70f); }
+    for (float px = -0.08f; px <= 0.09f; px += 0.022f) drawCircle(px, 0.008f, 0.004f, 0.25f, 0.45f, 0.70f);
     glColor3f(0.85f, 0.20f, 0.20f);
-    glBegin(GL_POLYGON); glVertex2f(-0.14f, 0.020f); glVertex2f(-0.08f, 0.020f); glVertex2f(-0.13f, 0.075f); glVertex2f(-0.16f, 0.075f); glEnd();
+    glBegin(GL_POLYGON); glVertex2f(-0.14f, 0.02f); glVertex2f(-0.08f, 0.02f); glVertex2f(-0.13f, 0.075f); glVertex2f(-0.16f, 0.075f); glEnd();
     glPopMatrix();
 }
 
@@ -215,36 +215,34 @@ void drawCar(float x, float y, float r, float g, float b) {
     glPushMatrix();
     glTranslatef(x, y, 0.0f);
     drawRect(-0.16f, -0.04f, 0.16f, 0.045f, r, g, b);
-    glColor3f(r * 0.9f, g * 0.9f, b * 0.9f);
+    glColor3f(r * 0.90f, g * 0.90f, b * 0.90f);
     glBegin(GL_POLYGON); glVertex2f(-0.10f, 0.045f); glVertex2f(0.08f, 0.045f); glVertex2f(0.05f, 0.11f); glVertex2f(-0.07f, 0.11f); glEnd();
-    float winCol = isNight ? 0.35f : 0.75f;
-    drawRect(-0.06f, 0.055f, -0.015f, 0.10f, winCol, winCol + 0.15f, 0.95f);
-    drawRect(0.005f, 0.055f, 0.045f, 0.10f, winCol, winCol + 0.15f, 0.95f);
-    drawRect(0.15f, 0.00f, 0.16f, 0.035f, 1.0f, 0.95f, 0.2f);
-    drawRect(-0.16f, 0.00f, -0.15f, 0.035f, 0.9f, 0.1f, 0.1f);
+    float wCol = isNight ? 0.35f : 0.75f;
+    drawRect(-0.06f, 0.055f, -0.015f, 0.10f, wCol, wCol + 0.15f, 0.95f);
+    drawRect(0.005f, 0.055f, 0.045f, 0.10f, wCol, wCol + 0.15f, 0.95f);
+    drawRect(0.15f, 0.00f, 0.16f, 0.035f, 1.0f, 0.95f, 0.20f);
+    drawRect(-0.16f, 0.00f, -0.15f, 0.035f, 0.90f, 0.10f, 0.10f);
     drawRotatingWheel(-0.09f, -0.04f, 0.035f);
     drawRotatingWheel(0.09f, -0.04f, 0.035f);
     glPopMatrix();
 }
 
-void drawBus(float x, float y, float r, float g, float b, float stripeR, float stripeG, float stripeB) {
+void drawBus(float x, float y, float r, float g, float b, float sR, float sG, float sB) {
     glPushMatrix();
     glTranslatef(x, y, 0.0f);
-    drawRect(-0.32f, -0.05f, 0.32f, 0.17f, r, g, b);
-    drawRect(-0.32f, 0.17f, 0.32f, 0.19f, r * 0.85f, g * 0.85f, b * 0.85f);
-    drawRect(-0.32f, 0.025f, 0.32f, 0.065f, stripeR, stripeG, stripeB);
-    float winCol = isNight ? 0.35f : 0.75f;
-    drawRect(0.20f, 0.065f, 0.30f, 0.155f, winCol, winCol + 0.15f, 0.95f);
-    glColor3f(0.15f, 0.15f, 0.18f); glLineWidth(1.8f);
-    glBegin(GL_LINE_LOOP); glVertex2f(0.20f, 0.065f); glVertex2f(0.30f, 0.065f); glVertex2f(0.30f, 0.155f); glVertex2f(0.20f, 0.155f); glEnd();
+    drawRect(-0.30f, -0.05f, 0.30f, 0.17f, r, g, b);
+    drawRect(-0.30f, 0.17f, 0.30f, 0.19f, r * 0.85f, g * 0.85f, b * 0.85f);
+    drawRect(-0.30f, 0.025f, 0.30f, 0.065f, sR, sG, sB);
+    float wCol = isNight ? 0.35f : 0.75f;
     for (int i = 0; i < 5; i++) {
         float wx = -0.29f + i * 0.095f;
-        drawRect(wx, 0.065f, wx + 0.075f, 0.155f, winCol, winCol + 0.15f, 0.95f);
-        glColor3f(0.15f, 0.15f, 0.18f); glLineWidth(1.8f);
+        drawRect(wx, 0.065f, wx + 0.075f, 0.155f, wCol, wCol + 0.15f, 0.95f);
+        glColor3f(0.15f, 0.15f, 0.18f); glLineWidth(1.5f);
         glBegin(GL_LINE_LOOP); glVertex2f(wx, 0.065f); glVertex2f(wx + 0.075f, 0.065f); glVertex2f(wx + 0.075f, 0.155f); glVertex2f(wx, 0.155f); glEnd();
     }
-    drawRect(0.315f, -0.02f, 0.32f, 0.035f, 1.0f, 0.95f, 0.2f);
-    drawRect(-0.32f, -0.02f, -0.315f, 0.035f, 0.9f, 0.1f, 0.1f);
+    drawRect(0.20f, 0.065f, 0.30f, 0.155f, wCol, wCol + 0.15f, 0.95f);
+    drawRect(0.30f, -0.02f, 0.32f, 0.035f, 1.0f, 0.95f, 0.20f);
+    drawRect(-0.32f, -0.02f, -0.30f, 0.035f, 0.90f, 0.10f, 0.10f);
     drawRotatingWheel(-0.20f, -0.05f, 0.048f);
     drawRotatingWheel(0.20f, -0.05f, 0.048f);
     glPopMatrix();
@@ -263,27 +261,24 @@ void drawRain() {
 }
 
 void drawStreetLamp(float x, float y, float height, bool faceRight) {
-    drawRect(x - 0.012f, y, x + 0.012f, y + 0.035f, 0.25f, 0.25f, 0.28f);
-    glColor3f(0.15f, 0.15f, 0.18f); glLineWidth(5.0f);
-    float armDir = faceRight ? 0.12f : -0.12f;
-    glBegin(GL_LINES);
-        glVertex2f(x, y); glVertex2f(x, y + height);
-        glVertex2f(x, y + height); glVertex2f(x + armDir, y + height + 0.02f);
-        glVertex2f(x + armDir, y + height + 0.02f); glVertex2f(x + armDir, y + height - 0.025f);
-    glEnd();
-    glColor3f(0.12f, 0.15f, 0.18f);
+    drawRect(x - 0.014f, y, x + 0.014f, y + 0.035f, 0.25f, 0.25f, 0.28f);
+    float aDir = faceRight ? 0.12f : -0.12f;
+    drawLine(x, y, x, y + height, 0.15f, 0.15f, 0.18f, 4.5f);
+    drawLine(x, y + height, x + aDir, y + height + 0.02f, 0.15f, 0.15f, 0.18f, 4.5f);
+    drawLine(x + aDir, y + height + 0.02f, x + aDir, y + height - 0.025f, 0.15f, 0.15f, 0.18f, 4.5f);
+    glColor3f(0.10f, 0.12f, 0.15f);
     glBegin(GL_POLYGON);
-        glVertex2f((x + armDir) - 0.035f, y + height - 0.015f);
-        glVertex2f((x + armDir) + 0.035f, y + height - 0.015f);
-        glVertex2f((x + armDir) + 0.022f, y + height + 0.020f);
-        glVertex2f((x + armDir) - 0.022f, y + height + 0.020f);
+    glVertex2f(x + aDir - 0.035f, y + height - 0.015f);
+    glVertex2f(x + aDir + 0.035f, y + height - 0.015f);
+    glVertex2f(x + aDir + 0.022f, y + height + 0.020f);
+    glVertex2f(x + aDir - 0.022f, y + height + 0.020f);
     glEnd();
-    if (isNight || isRaining) { drawCircle(x + armDir, y + height - 0.038f, 0.045f, 1.0f, 0.92f, 0.40f); }
-    drawCircle(x + armDir, y + height - 0.035f, 0.024f, 1.0f, 0.98f, 0.20f);
+    if (isNight || isRaining) drawCircle(x + aDir, y + height - 0.038f, 0.040f, 1.0f, 0.90f, 0.35f);
+    drawCircle(x + aDir, y + height - 0.035f, 0.020f, 1.0f, 0.95f, 0.45f);
 }
 
 // ==========================================
-// SCENE 1: TOMAR ORIGINAL CODE FUNCTIONS
+// SCENE 1 FUNCTIONS
 // ==========================================
 void drawNaturalTree1(float x, float y, float scale) {
     drawRect(x - 0.012f * scale, y, x + 0.012f * scale, y + 0.35f * scale, 0.38f, 0.22f, 0.12f);
@@ -342,19 +337,6 @@ void drawMainTerminal1() {
     glBegin(GL_POLYGON); glVertex2f(-0.43f, 0.56f); glVertex2f(-0.92f, 0.56f); glVertex2f(-0.98f, 0.72f); glVertex2f(-0.45f, 0.64f); glEnd();
     glColor3f(0.85f, 0.40f, 0.15f);
     glBegin(GL_POLYGON); glVertex2f(-0.92f, 0.56f); glVertex2f(-0.98f, 0.72f); glVertex2f(-0.96f, 0.73f); glVertex2f(-0.90f, 0.58f); glEnd();
-    glColor3f(0.20f, 0.20f, 0.24f); glLineWidth(3.0f);
-    glBegin(GL_LINES);
-        glVertex2f(-0.90f, 0.56f); glVertex2f(-0.96f, 0.68f);
-        glVertex2f(-0.78f, 0.56f); glVertex2f(-0.84f, 0.68f);
-        glVertex2f(-0.66f, 0.56f); glVertex2f(-0.72f, 0.68f);
-        glVertex2f(-0.54f, 0.56f); glVertex2f(-0.60f, 0.68f);
-    glEnd();
-    glColor3f(0.25f, 0.25f, 0.28f); glLineWidth(2.0f);
-    glBegin(GL_LINES);
-        glVertex2f(-0.68f, 0.60f); glVertex2f(-0.68f, 0.78f);
-        glVertex2f(-0.71f, 0.73f); glVertex2f(-0.65f, 0.73f);
-    glEnd();
-    drawCircle(-0.68f, 0.79f, 0.012f, 1.0f, 0.1f, 0.1f);
 }
 
 void drawMiddleBuilding1() {
@@ -365,8 +347,6 @@ void drawMiddleBuilding1() {
     for (int i = 0; i < 4; i++) {
         float wx = -0.41f + i * 0.10f;
         drawRect(wx, -0.02f, wx + 0.06f, 0.08f, winR, winG, winB);
-        glColor3f(0.20f, 0.20f, 0.20f); glLineWidth(1.5f);
-        glBegin(GL_LINE_LOOP); glVertex2f(wx, -0.02f); glVertex2f(wx + 0.06f, -0.02f); glVertex2f(wx + 0.06f, 0.08f); glVertex2f(wx, 0.08f); glEnd();
     }
 }
 
@@ -377,8 +357,6 @@ void drawConcretePillars1() {
         float x1 = startX + i * (width + gap), x2 = x1 + width, topY = -0.28f + heights[i];
         float baseAsh = isNight ? 0.24f : 0.55f, ashVal = baseAsh + i * 0.025f;
         drawRect(x1, -0.28f, x2, topY, ashVal, ashVal + 0.01f, ashVal + 0.02f);
-        glColor3f(0.18f, 0.18f, 0.20f); glLineWidth(1.5f);
-        glBegin(GL_LINE_LOOP); glVertex2f(x1, -0.28f); glVertex2f(x2, -0.28f); glVertex2f(x2, topY); glVertex2f(x1, topY); glEnd();
         drawRect(x1 + 0.015f, topY - 0.04f, x2 - 0.015f, topY - 0.02f, 0.20f, 0.20f, 0.22f);
     }
 }
@@ -387,14 +365,6 @@ void drawDirectionBoard1() {
     drawRect(0.70f, -0.28f, 0.72f, 0.00f, 0.30f, 0.30f, 0.30f);
     drawRect(0.92f, -0.28f, 0.94f, 0.00f, 0.30f, 0.30f, 0.30f);
     drawRect(0.68f, 0.00f, 0.96f, 0.24f, 0.08f, 0.52f, 0.22f);
-    glColor3f(1.0f, 1.0f, 1.0f); glLineWidth(2.0f);
-    glBegin(GL_LINE_LOOP); glVertex2f(0.69f, 0.01f); glVertex2f(0.95f, 0.01f); glVertex2f(0.95f, 0.23f); glVertex2f(0.69f, 0.23f); glEnd();
-    glBegin(GL_LINES); glVertex2f(0.82f, 0.01f); glVertex2f(0.82f, 0.23f); glEnd();
-    glLineWidth(2.5f);
-    glBegin(GL_LINES);
-        glVertex2f(0.72f, 0.12f); glVertex2f(0.79f, 0.12f); glVertex2f(0.79f, 0.12f); glVertex2f(0.76f, 0.15f); glVertex2f(0.79f, 0.12f); glVertex2f(0.76f, 0.09f);
-        glVertex2f(0.85f, 0.12f); glVertex2f(0.92f, 0.12f); glVertex2f(0.92f, 0.12f); glVertex2f(0.89f, 0.15f); glVertex2f(0.92f, 0.12f); glVertex2f(0.89f, 0.09f);
-    glEnd();
 }
 
 void drawRoadAndDividers1() {
@@ -430,11 +400,11 @@ void drawScene1() {
     drawBus(bus2X, -0.82f, 0.90f, 0.40f, 0.15f, 0.95f, 0.95f, 0.95f);
     drawRain();
 
-    drawText(-0.95f, 0.90f, 1.0f, 1.0f, 1.0f, "SCENE 1: Airport & Highway (Press '2' for Scene 2)");
+    drawText(-0.95f, 0.90f, 1.0f, 1.0f, 1.0f, "SCENE 1 (Press '2' for Scene 2, '3' for Scene 3)");
 }
 
 // ==========================================
-// SCENE 2: FRIEND'S ORIGINAL CODE FUNCTIONS
+// SCENE 2 FUNCTIONS
 // ==========================================
 void drawNaturalTree2(float x, float y, float scale) {
     drawRect(x - 0.015f * scale, y, x + 0.015f * scale, y + 0.30f * scale, 0.34f, 0.20f, 0.10f);
@@ -480,19 +450,6 @@ void drawTerminal1And2Building() {
     drawRect(xL, yT, xR + 0.045f, yT + 0.022f, 0.92f, 0.87f, 0.76f);
     float cx = xL + 0.15f, cy = yB + 0.20f, rad = 0.095f;
     drawCircle(cx, cy, rad, gR, gG, gB);
-    glColor3f(0.28f, 0.26f, 0.22f); glLineWidth(2.0f);
-    glBegin(GL_LINE_LOOP);
-    for (int i = 0; i < 360; i += 10) {
-        float a = i * 3.14159265f / 180.0f;
-        glVertex2f(cx + cos(a) * rad, cy + sin(a) * rad);
-    }
-    glEnd();
-    float offsets[3] = { -0.5f * rad, 0.0f, 0.5f * rad };
-    for (int i = 0; i < 3; i++) {
-        float dx = offsets[i], dy = offsets[i];
-        drawLine(cx + dx, cy - sqrtf(rad * rad - dx * dx), cx + dx, cy + sqrtf(rad * rad - dx * dx), 0.28f, 0.26f, 0.22f, 1.5f);
-        drawLine(cx - sqrtf(rad * rad - dy * dy), cy + dy, cx + sqrtf(rad * rad - dy * dy), cy + dy, 0.28f, 0.26f, 0.22f, 1.5f);
-    }
 }
 
 void drawControlTower2() {
@@ -506,8 +463,6 @@ void drawControlTower2() {
     glVertex2f(xR - 0.060f, 0.52f); glVertex2f(xL + 0.060f, 0.52f);
     glEnd();
     drawRect(xL + 0.01f, 0.30f, xR - 0.01f, 0.42f, cR, cG, cB);
-    for (float wx = xL + 0.035f; wx <= xR - 0.05f; wx += 0.045f)
-        drawRect(wx, 0.335f, wx + 0.025f, 0.385f, 0.10f, 0.13f, 0.18f);
     drawRect(xL + 0.055f, 0.52f, xR - 0.055f, 0.56f, cpR, cpG, cpB);
     drawCircle((xL + xR) * 0.5f, 0.575f, 0.045f, cpR, cpG, cpB);
 }
@@ -521,15 +476,6 @@ void drawTerminal2() {
     for (float y = -0.08f; y <= 0.12f; y += 0.055f) drawLine(0.07f, y, 0.83f, y, 0.12f, 0.14f, 0.17f, 1.5f);
     drawRect(-0.02f, 0.16f, 0.91f, 0.21f, 0.24f, 0.26f, 0.29f);
     drawRect(0.02f, 0.21f, 0.88f, 0.25f, 0.62f, 0.64f, 0.67f);
-    for (int i = 0; i < 5; i++) {
-        float x = 0.13f + i * 0.15f;
-        drawRect(x - 0.018f, -0.28f, x + 0.018f, 0.09f, 0.76f, 0.77f, 0.79f);
-        drawRect(x - 0.055f, -0.28f, x + 0.055f, 0.07f, isNight ? 0.10f : 0.25f, isNight ? 0.28f : 0.60f, isNight ? 0.40f : 0.78f);
-        drawCircle(x, 0.07f, 0.045f, 0.72f, 0.74f, 0.77f);
-        drawRect(x - 0.045f, 0.03f, x + 0.045f, 0.08f, isNight ? 0.10f : 0.25f, isNight ? 0.28f : 0.60f, isNight ? 0.40f : 0.78f);
-    }
-    drawRect(0.34f, 0.14f, 0.63f, 0.19f, 0.04f, 0.25f, 0.46f);
-    drawRect(0.37f, 0.155f, 0.60f, 0.180f, 0.07f, 0.43f, 0.66f);
     drawText(0.12f, 0.225f, 0.90f, 0.10f, 0.10f, "HAZRAT SHAHJALAL INTERNATIONAL AIRPORT");
     drawText(0.39f, 0.162f, 0.10f, 0.75f, 0.20f, "TERMINAL 3");
 }
@@ -583,24 +529,262 @@ void drawScene2() {
     drawBus(bus2X, -0.82f, 0.90f, 0.40f, 0.15f, 0.95f, 0.95f, 0.95f);
     drawRain();
 
-    drawText(-0.95f, 0.90f, 1.0f, 1.0f, 1.0f, "SCENE 2: Terminal 3 & Bezier Path (Press '1' for Scene 1)");
+    drawText(-0.95f, 0.90f, 1.0f, 1.0f, 1.0f, "SCENE 2 (Press '1' for Scene 1, '3' for Scene 3)");
 }
 
 // ==========================================
-// MAIN DISPLAY & CALLBACKS
+// SCENE 3 FUNCTIONS
+// ==========================================
+void renderEnvironmentSky3() {
+    if (isNight) {
+        drawSolidBox(-1.0f, -0.25f, 1.0f, 1.0f, 0.02f, 0.03f, 0.07f);
+        drawSmoothCircle(0.70f, 0.80f, 0.070f, 1.0f, 1.0f, 0.90f, 0.15f);
+        drawSmoothCircle(0.70f, 0.80f, 0.050f, 0.95f, 0.95f, 0.85f);
+        drawSmoothCircle(0.68f, 0.81f, 0.048f, 0.02f, 0.03f, 0.07f);
+    } else if (isRaining) {
+        drawSolidBox(-1.0f, -0.25f, 1.0f, 1.0f, 0.22f, 0.25f, 0.30f);
+    } else {
+        drawSolidBox(-1.0f, -0.25f, 1.0f, 1.0f, 0.40f, 0.68f, 0.92f);
+        drawSmoothCircle(0.75f, 0.80f, 0.08f, 1.0f, 0.90f, 0.30f, 0.25f);
+        drawSmoothCircle(0.75f, 0.80f, 0.06f, 1.0f, 0.85f, 0.10f);
+    }
+}
+
+void renderRainAndFog3() {
+    if (isFoggy) {
+        float alpha = isNight ? 0.38f : 0.48f;
+        drawSolidBox(-1.0f, -1.0f, 1.0f, 1.0f, 0.75f, 0.78f, 0.82f, alpha);
+    }
+    if (isRaining) {
+        glColor4f(0.80f, 0.90f, 1.0f, 0.75f);
+        glLineWidth(1.4f);
+        glBegin(GL_LINES);
+        for (int i = 0; i < MAX_RAIN; i++) {
+            glVertex2f(rainX[i], rainY[i]);
+            glVertex2f(rainX[i] - 0.012f, rainY[i] - 0.045f);
+        }
+        glEnd();
+        glLineWidth(1.0f);
+    }
+}
+
+void drawWaterLilyPetal(float cx, float cy, float radius, float angle, float r, float g, float b) {
+    glPushMatrix();
+    glTranslatef(cx, cy, 0.0f);
+    glRotatef(angle, 0.0f, 0.0f, 1.0f);
+    glColor3f(r, g, b);
+    glBegin(GL_POLYGON);
+        glVertex2f(0.0f, 0.0f);
+        glVertex2f(-radius * 0.30f, radius * 0.45f);
+        glVertex2f(0.0f, radius);
+        glVertex2f(radius * 0.30f, radius * 0.45f);
+    glEnd();
+    glPopMatrix();
+}
+
+void drawWaterLilyFlower(float cx, float cy, float scale) {
+    for (int i = 0; i < 8; i++) drawWaterLilyPetal(cx, cy, 0.07f * scale, i * 45.0f, 0.94f, 0.45f, 0.65f);
+    for (int i = 0; i < 8; i++) drawWaterLilyPetal(cx, cy, 0.05f * scale, i * 45.0f + 22.5f, 0.98f, 0.75f, 0.88f);
+    drawSmoothCircle(cx, cy, 0.015f * scale, 1.0f, 0.85f, 0.10f);
+}
+
+void renderRealTerminal3Exterior3() {
+    float wallR = isNight ? 0.08f : 0.20f;
+    float wallG = isNight ? 0.12f : 0.25f;
+    float wallB = isNight ? 0.16f : 0.30f;
+
+    drawSolidBox(-0.55f, -0.10f, 0.95f, 0.48f, wallR, wallG, wallB);
+
+    for (float x = -0.54f; x < 0.94f; x += 0.06f) {
+        for (float y = -0.08f; y < 0.46f; y += 0.07f) {
+            glColor3f(wallR + 0.12f, wallG + 0.12f, wallB + 0.14f);
+            glBegin(GL_TRIANGLES);
+                glVertex2f(x, y); glVertex2f(x + 0.06f, y); glVertex2f(x + 0.03f, y + 0.07f);
+            glEnd();
+            glColor3f(wallR - 0.04f, wallG - 0.04f, wallB - 0.03f);
+            glBegin(GL_TRIANGLES);
+                glVertex2f(x, y + 0.07f); glVertex2f(x + 0.06f, y + 0.07f); glVertex2f(x + 0.03f, y);
+            glEnd();
+            drawLine(x, y, x + 0.06f, y + 0.07f, wallR + 0.22f, wallG + 0.22f, wallB + 0.24f, 0.8f);
+        }
+    }
+
+    drawWaterLilyFlower(-0.25f, 0.18f, 1.4f);
+    drawWaterLilyFlower(0.20f, 0.28f, 1.6f);
+    drawWaterLilyFlower(0.65f, 0.18f, 1.3f);
+
+    drawSolidBox(-0.58f, 0.48f, 0.98f, 0.54f, 0.90f, 0.92f, 0.95f);
+    drawSolidBox(-0.58f, 0.54f, 0.98f, 0.56f, 0.10f, 0.50f, 0.55f);
+
+    drawBitmapText(-0.48f, 0.64f, "HAZRAT SHAHJALAL INTERNATIONAL AIRPORT", GLUT_BITMAP_HELVETICA_18, 0.05f, 0.20f, 0.45f);
+    drawBitmapText(-0.10f, 0.58f, "TERMINAL 3", GLUT_BITMAP_HELVETICA_18, 0.90f, 0.15f, 0.15f);
+}
+
+void renderAirportFireTruck3(float x, float y) {
+    glPushMatrix();
+    glTranslatef(x, y, 0.0f);
+    glScalef(0.85f, 0.85f, 1.0f);
+    drawSolidBox(-0.16f, -0.02f, 0.16f, 0.07f, 0.85f, 0.10f, 0.10f);
+    drawSolidBox(0.06f, 0.02f, 0.14f, 0.065f, 0.15f, 0.25f, 0.35f);
+    drawSolidBox(-0.16f, 0.015f, 0.16f, 0.025f, 0.95f, 0.85f, 0.10f);
+    drawLine(0.02f, 0.07f, 0.10f, 0.09f, 0.6f, 0.6f, 0.6f, 3.0f);
+
+    if (emergencySiren3) drawSmoothCircle(0.02f, 0.08f, 0.014f, 1.0f, 0.0f, 0.0f);
+    else drawSmoothCircle(-0.02f, 0.08f, 0.014f, 0.0f, 0.4f, 1.0f);
+
+    drawSmoothCircle(-0.10f, -0.025f, 0.035f, 0.15f, 0.15f, 0.15f);
+    drawSmoothCircle(-0.10f, -0.025f, 0.018f, 0.60f, 0.60f, 0.60f);
+    drawSmoothCircle(0.00f, -0.025f, 0.035f, 0.15f, 0.15f, 0.15f);
+    drawSmoothCircle(0.00f, -0.025f, 0.018f, 0.60f, 0.60f, 0.60f);
+    drawSmoothCircle(0.10f, -0.025f, 0.035f, 0.15f, 0.15f, 0.15f);
+    drawSmoothCircle(0.10f, -0.025f, 0.018f, 0.60f, 0.60f, 0.60f);
+    glPopMatrix();
+}
+
+void renderFuelDepotAndSecurity3() {
+    drawSolidBox(-0.95f, -0.10f, -0.83f, 0.12f, 0.80f, 0.82f, 0.85f);
+    drawSmoothCircle(-0.89f, 0.12f, 0.06f, 0.75f, 0.78f, 0.80f);
+    drawBitmapText(-0.93f, 0.00f, "FUEL", GLUT_BITMAP_HELVETICA_10, 0.8f, 0.1f, 0.1f);
+    drawSolidBox(-0.98f, -0.10f, -0.96f, 0.25f, 0.3f, 0.3f, 0.3f);
+    drawSolidBox(-0.99f, 0.25f, -0.95f, 0.32f, 0.2f, 0.5f, 0.7f);
+}
+
+void renderRunwayLights3() {
+    drawSolidBox(-1.0f, -0.18f, 1.0f, -0.10f, 0.22f, 0.22f, 0.24f);
+    for (float x = -0.95f; x <= 0.95f; x += 0.12f) {
+        if (isNight) {
+            drawSmoothCircle(x, -0.10f, 0.008f, 0.1f, 1.0f, 0.2f);
+            drawSmoothCircle(x, -0.18f, 0.008f, 1.0f, 0.2f, 0.1f);
+        } else {
+            drawSmoothCircle(x, -0.10f, 0.005f, 0.8f, 0.8f, 0.2f);
+        }
+    }
+}
+
+void renderRadarControlTower3() {
+    float wallR = isNight ? 0.10f : 0.38f;
+    float wallG = isNight ? 0.14f : 0.42f;
+    float wallB = isNight ? 0.18f : 0.46f;
+
+    glBegin(GL_POLYGON);
+        glColor3f(wallR, wallG, wallB);
+        glVertex2f(-0.75f, -0.10f); glVertex2f(-0.65f, -0.10f);
+        glVertex2f(-0.67f, 0.58f); glVertex2f(-0.73f, 0.58f);
+    glEnd();
+
+    drawSmoothCircle(-0.70f, 0.63f, 0.075f, 0.15f, 0.55f, 0.75f, 0.85f);
+    drawSolidBox(-0.77f, 0.58f, -0.63f, 0.60f, 0.2f, 0.2f, 0.22f);
+
+    glPushMatrix();
+    glTranslatef(-0.70f, 0.72f, 0.0f);
+    glRotatef(radarAngle3, 0.0f, 0.0f, 1.0f);
+    drawLine(-0.045f, 0.0f, 0.045f, 0.0f, 0.95f, 0.15f, 0.15f, 3.0f);
+    drawSmoothCircle(0.045f, 0.0f, 0.01f, 0.2f, 0.2f, 0.2f);
+    glPopMatrix();
+
+    if (beaconState3) drawSmoothCircle(-0.70f, 0.74f, 0.014f, 1.0f, 0.1f, 0.1f);
+}
+
+void renderRoadwayAndVehicles3() {
+    drawSolidBox(-1.0f, -0.35f, 1.0f, -0.22f, 0.55f, 0.55f, 0.58f);
+    drawSolidBox(-1.0f, -1.00f, 1.0f, -0.35f, 0.15f, 0.15f, 0.17f);
+    for (float x = -0.90f; x < 1.0f; x += 0.28f) drawSolidBox(x, -0.66f, x + 0.14f, -0.64f, 0.95f, 0.80f, 0.20f);
+
+    float lamps[] = { -0.85f, -0.40f, 0.10f, 0.60f };
+    for (int i = 0; i < 4; i++) {
+        float lx = lamps[i];
+        drawLine(lx, -0.22f, lx, 0.05f, 0.2f, 0.2f, 0.25f, 3.0f);
+        drawLine(lx, 0.05f, lx + 0.04f, 0.05f, 0.2f, 0.2f, 0.25f, 2.0f);
+        if (isNight) {
+            drawSmoothCircle(lx + 0.04f, 0.05f, 0.025f, 1.0f, 0.9f, 0.4f);
+            drawSolidBox(lx + 0.02f, -0.25f, lx + 0.08f, 0.04f, 1.0f, 0.9f, 0.5f, 0.08f);
+        }
+    }
+}
+
+void renderExpensiveSportsCar3(float x, float y) {
+    glPushMatrix();
+    glTranslatef(x, y, 0.0f);
+    glScalef(0.95f, 0.95f, 1.0f);
+    drawSmoothCircle(-0.19f, -0.01f, 0.015f, 0.7f, 0.7f, 0.7f, 0.3f);
+    drawSmoothCircle(-0.22f, 0.00f, 0.022f, 0.7f, 0.7f, 0.7f, 0.2f);
+    glColor3f(0.95f, 0.20f, 0.05f);
+    glBegin(GL_POLYGON);
+        glVertex2f(-0.16f, -0.02f); glVertex2f(0.16f, -0.02f); glVertex2f(0.18f, 0.005f);
+        glVertex2f(0.08f, 0.025f); glVertex2f(-0.12f, 0.025f); glVertex2f(-0.17f, 0.00f);
+    glEnd();
+    glColor3f(0.10f, 0.12f, 0.15f);
+    glBegin(GL_POLYGON);
+        glVertex2f(-0.06f, 0.025f); glVertex2f(0.06f, 0.025f); glVertex2f(0.02f, 0.065f); glVertex2f(-0.04f, 0.065f);
+    glEnd();
+    drawLine(-0.18f, 0.045f, -0.13f, 0.045f, 0.1f, 0.1f, 0.1f, 3.0f);
+    drawSmoothCircle(-0.09f, -0.025f, 0.032f, 0.1f, 0.1f, 0.1f);
+    drawSmoothCircle(-0.09f, -0.025f, 0.018f, 0.8f, 0.8f, 0.85f);
+    drawSmoothCircle(0.09f, -0.025f, 0.032f, 0.1f, 0.1f, 0.1f);
+    drawSmoothCircle(0.09f, -0.025f, 0.018f, 0.8f, 0.8f, 0.85f);
+    if (isNight) drawSmoothCircle(0.17f, 0.005f, 0.012f, 0.9f, 0.95f, 1.0f);
+    glPopMatrix();
+}
+
+void renderStandardCar3(float x, float y, float r, float g, float b) {
+    glPushMatrix();
+    glTranslatef(x, y, 0.0f);
+    drawSolidBox(-0.13f, -0.03f, 0.13f, 0.03f, r, g, b);
+    drawSolidBox(-0.07f, 0.03f, 0.05f, 0.075f, r * 0.85f, g * 0.85f, b * 0.85f);
+    drawSmoothCircle(-0.07f, -0.03f, 0.03f, 0.1f, 0.1f, 0.1f);
+    drawSmoothCircle(0.07f, -0.03f, 0.03f, 0.1f, 0.1f, 0.1f);
+    if (isNight) drawSmoothCircle(0.13f, 0.00f, 0.012f, 1.0f, 1.0f, 0.5f);
+    glPopMatrix();
+}
+
+void renderHUDDashboard3() {
+    drawSolidBox(-0.98f, 0.85f, -0.45f, 0.96f, 0.0f, 0.0f, 0.0f, 0.5f);
+    char modeStr[64];
+    const char* timeMode = isNight ? "NIGHT" : "DAY";
+    const char* weatherMode = isRaining ? "RAINING" : (isFoggy ? "FOGGY" : "CLEAR");
+    sprintf(modeStr, "STATUS: %s | WEATHER: %s", timeMode, weatherMode);
+    drawBitmapText(-0.96f, 0.89f, modeStr, GLUT_BITMAP_HELVETICA_10, 0.2f, 1.0f, 0.4f);
+}
+
+void drawScene3() {
+    renderEnvironmentSky3();
+    renderFuelDepotAndSecurity3();
+    renderRadarControlTower3();
+    renderRealTerminal3Exterior3();
+    renderRunwayLights3();
+
+    renderAirportFireTruck3(fireTruckX3, -0.14f);
+    drawAirplane(planePosX3, 0.78f);
+
+    renderRoadwayAndVehicles3();
+    renderExpensiveSportsCar3(sportsCarX3, -0.82f);
+    renderStandardCar3(luxurySUV_X3, -0.50f, 0.15f, 0.55f, 0.65f);
+    renderStandardCar3(cargoVanX3, -0.52f, 0.85f, 0.85f, 0.85f);
+
+    renderRainAndFog3();
+    renderHUDDashboard3();
+
+    drawText(-0.95f, 0.90f, 1.0f, 1.0f, 1.0f, "SCENE 3 (Press '1' for Scene 1, '2' for Scene 2)");
+}
+
+// ==========================================
+// DISPLAY & MAIN CALLBACKS
 // ==========================================
 void display() {
     glClear(GL_COLOR_BUFFER_BIT);
     if (currentScene == 1) {
         drawScene1();
-    } else {
+    } else if (currentScene == 2) {
         drawScene2();
+    } else {
+        drawScene3();
     }
     glFlush();
 }
 
 void timer(int value) {
     if (!isPaused) {
+        // Shared vehicle & cloud animations
         car1X += 0.008f; car2X += 0.008f; car3X += 0.010f;
         if (car1X > 1.5f) car1X = -1.5f;
         if (car2X > 1.5f) car2X = -1.5f;
@@ -619,6 +803,25 @@ void timer(int value) {
         planeParam2 += 0.004f;
         if (planeParam2 > 1.0f) planeParam2 = 0.0f;
 
+        // Scene 3 specific animations
+        planePosX3 += 0.014f;
+        if (planePosX3 > 1.40f) planePosX3 = -1.40f;
+
+        fireTruckX3 += 0.010f;
+        if (fireTruckX3 > 1.40f) fireTruckX3 = -1.40f;
+
+        sportsCarX3 += 0.018f;
+        if (sportsCarX3 > 1.45f) sportsCarX3 = -1.45f;
+
+        luxurySUV_X3 += 0.007f;
+        if (luxurySUV_X3 > 1.40f) luxurySUV_X3 = -1.40f;
+
+        cargoVanX3 += 0.009f;
+        if (cargoVanX3 > 1.40f) cargoVanX3 = -1.40f;
+
+        radarAngle3 -= 4.0f;
+        if (radarAngle3 < -360.0f) radarAngle3 = 0.0f;
+
         cloud1X += 0.0010f; cloud2X += 0.0006f; cloud3X += 0.0014f;
         if (cloud1X > 1.4f) cloud1X = -1.4f;
         if (cloud2X > 1.4f) cloud2X = -1.4f;
@@ -634,6 +837,18 @@ void timer(int value) {
                 }
             }
         }
+
+        sirenTicks3++;
+        if (sirenTicks3 >= 10) {
+            emergencySiren3 = !emergencySiren3;
+            sirenTicks3 = 0;
+        }
+
+        beaconTicks3++;
+        if (beaconTicks3 >= 20) {
+            beaconState3 = !beaconState3;
+            beaconTicks3 = 0;
+        }
     }
     glutPostRedisplay();
     glutTimerFunc(16, timer, 0);
@@ -644,30 +859,50 @@ void keyboard(unsigned char key, int x, int y) {
         currentScene = 1;
     } else if (key == '2') {
         currentScene = 2;
+    } else if (key == '3') {
+        currentScene = 3;
     } else if (key == 'n' || key == 'N') {
         isNight = true;
     } else if (key == 'd' || key == 'D') {
         isNight = false;
     } else if (key == 'r' || key == 'R') {
         isRaining = !isRaining;
+    } else if (key == 'f' || key == 'F') {
+        isFoggy = !isFoggy;
     } else if (key == 'p' || key == 'P' || key == ' ') {
         isPaused = !isPaused;
     }
     glutPostRedisplay();
 }
 
+void reshape(int w, int h) {
+    glViewport(0, 0, w, h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(-1.0, 1.0, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+}
+
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB);
     glutInitWindowSize(1024, 768);
-    glutInitWindowPosition(100, 100);
-    glutCreateWindow("Complete Merged Airport Scenes - Computer Graphics Project");
+    glutInitWindowPosition(100, 50);
+    glutCreateWindow("Complete Multi-Scene Airport & Terminal 3 Project");
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     initRain();
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
     gluOrtho2D(-1.0, 1.0, -1.0, 1.0);
 
     glutDisplayFunc(display);
+    glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
     glutTimerFunc(0, timer, 0);
 
