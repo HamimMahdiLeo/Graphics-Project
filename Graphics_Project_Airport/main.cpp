@@ -8,6 +8,7 @@
 // ==========================================
 // GLOBAL VARIABLES & SCENE MANAGEMENT
 // ==========================================
+
 int currentScene = 1; // 1 = Scene 1, 2 = Scene 2, 3 = Scene 3
 
 bool isNight = false;
